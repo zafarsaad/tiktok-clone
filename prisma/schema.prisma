@@ -1,0 +1,90 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("POSTGRES_PRISMA_URL")
+}
+
+model User {
+  id        String   @id @unique // Clerk User ID
+  username  String?  @unique
+  email     String?  @unique
+  onboarded Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships:
+  interests      UserInterest[] // User's chosen interests
+  uploadedVideos Video[] // Videos uploaded by the user
+
+  @@map("users")
+}
+
+// Model for predefined interest categories / video tags
+model Interest {
+  id   String @id @default(cuid()) // cuid() is a Prisma function for unique IDs
+  name String @unique // e.g., "Comedy", "Dance", "Tech"
+
+  // Relationships:
+  users        UserInterest[] // Users who selected this as an interest
+  taggedVideos VideoTag[] // Videos tagged with this interest/category
+
+  @@map("interests")
+}
+
+// Join table for User's selected interests (Many-to-Many User <-> Interest)
+model UserInterest {
+  userId     String
+  interestId String
+  assignedAt DateTime @default(now())
+
+  // Relations:
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  interest Interest @relation(fields: [interestId], references: [id], onDelete: Cascade)
+
+  @@id([userId, interestId]) // Composite primary key
+  @@map("user_interests")
+}
+
+// Model for Video metadata
+model Video {
+  id           String   @id @default(cuid())
+  title        String?
+  description  String?
+  blobUrl      String   @unique // URL from Vercel Blob storage
+  uploaderId   String // Foreign key to User ID (Clerk ID)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  processed    Boolean  @default(false) // Has Gemini analysis completed?
+  analysisData Json? // Optional: Store raw Gemini response or structured data
+
+  // Relations:
+  uploader User       @relation(fields: [uploaderId], references: [id], onDelete: Cascade) // If user deleted, delete their videos
+  tags     VideoTag[] // Tags associated with this video
+
+  @@map("videos")
+}
+
+// Join table for Video Tags (Many-to-Many Video <-> Interest/Tag)
+// Reusing the 'Interest' table for tags for simplicity in MVP
+model VideoTag {
+  videoId String
+  tagId   String // This references Interest.id
+
+  assignedAt DateTime @default(now())
+
+  // Relations:
+  video Video    @relation(fields: [videoId], references: [id], onDelete: Cascade) // If video deleted, delete tag associations
+  tag   Interest @relation(fields: [tagId], references: [id], onDelete: Cascade) // If interest/tag deleted, remove from videos
+
+  @@id([videoId, tagId]) // Composite primary key
+  @@map("video_tags")
+}
